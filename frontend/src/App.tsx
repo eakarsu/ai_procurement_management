@@ -20,6 +20,12 @@ import AIRefineWorkflow from './pages/AIRefineWorkflow';
 import Approvals from './pages/Approvals';
 import TaskDependencies from './pages/TaskDependencies';
 import RPAIntegrations from './pages/RPAIntegrations';
+import WorkflowSlaCalendar from './pages/WorkflowSlaCalendar';
+
+import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
+import CodexOperationsFeature from './pages/CodexOperationsFeature';
+
+import TimelineView from './pages/TimelineView';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -33,6 +39,10 @@ export default function App() {
     <>
       <Nav />
       <Routes>
+        <Route path="/insights/timeline" element={<TimelineView />} />
+        <Route path="/codex/custom-viz" element={<CodexCustomVizFeature />} />
+        <Route path="/codex/operations" element={<CodexOperationsFeature />} />
+
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<Protected><Dashboard /></Protected>} />
         <Route path="/workflows" element={<Protected><Workflows /></Protected>} />
@@ -52,6 +62,7 @@ export default function App() {
         <Route path="/approvals" element={<Protected><Approvals /></Protected>} />
         <Route path="/task-dependencies" element={<Protected><TaskDependencies /></Protected>} />
         <Route path="/rpa-integrations" element={<Protected><RPAIntegrations /></Protected>} />
+        <Route path="/workflow-sla-calendar" element={<Protected><WorkflowSlaCalendar /></Protected>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

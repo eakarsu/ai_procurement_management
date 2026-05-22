@@ -9,7 +9,7 @@ from database import Base, engine
 import models  # noqa: F401 — ensures models are registered before create_all
 import auth
 from middleware import SecurityHeadersMiddleware, RequestLoggingMiddleware
-from routers import workflows, tasks, automations, ai, analytics, templates, webhooks
+from routers import workflows, tasks, automations, ai, analytics, templates, webhooks, workflow_sla_calendar
 # Apply pass 5 — additive routes (task dependencies + approvals).
 from routers import extras as extras_router
 
@@ -61,6 +61,7 @@ app.include_router(analytics.router)
 app.include_router(templates.router)
 app.include_router(webhooks.router)
 app.include_router(extras_router.router)
+app.include_router(workflow_sla_calendar.router)
 # Batch 00 audit additive routes
 from routers import process_mining, nl_workflow, streaming_anomalies, rpa_bridge, mobile_companion  # noqa: E402
 app.include_router(process_mining.router)

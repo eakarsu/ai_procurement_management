@@ -34,6 +34,9 @@ export default function Nav() {
       <NavLink to="/rpa-integrations" className={({ isActive }) => (isActive ? 'active' : '')}>
         RPA
       </NavLink>
+      <NavLink to="/workflow-sla-calendar" className={({ isActive }) => (isActive ? 'active' : '')}>
+        SLA Calendar
+      </NavLink>
 
       {/* AI dropdown */}
       <div style={{ position: 'relative' }}>

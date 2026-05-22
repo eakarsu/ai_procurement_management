@@ -25,7 +25,7 @@ import math
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-MODEL = "claude-3-5-sonnet-20241022"
+MODEL = os.getenv("OPENROUTER_MODEL") or os.getenv("ANTHROPIC_MODEL") or "claude-3-5-sonnet-20241022"
 
 SYSTEM_PROMPT = (
     "You are an expert business process automation architect and analyst. "
@@ -35,9 +35,14 @@ SYSTEM_PROMPT = (
 
 
 def _get_anthropic_client() -> anthropic.Anthropic:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
+    base_url = os.getenv("ANTHROPIC_BASE_URL")
+    if not base_url and os.getenv("OPENROUTER_API_KEY"):
+        base_url = "https://openrouter.ai/api"
+    if base_url:
+        return anthropic.Anthropic(api_key=api_key, base_url=base_url)
     return anthropic.Anthropic(api_key=api_key)
 
 

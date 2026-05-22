@@ -1,0 +1,9 @@
+
+# --- secrets (auto-added) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/credentials*.json
+**/serviceAccount*.json
