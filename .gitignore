@@ -7,3 +7,17 @@
 *.key
 **/credentials*.json
 **/serviceAccount*.json
+
+# --- secrets: never commit ---
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+token.txt
+*.token
+.npmrc
+id_rsa*
+**/credentials*.json
+**/serviceAccount*.json
