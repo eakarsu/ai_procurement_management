@@ -7,259 +7,288 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id        String     @id @default(cuid())
+  name      String
+  createdAt DateTime   @default(now())
+  users     User[]
+  vendors   Vendor[]
+  bids      Bid[]
+  auditLogs AuditLog[]
+
+  @@map("tenants")
+}
+
 model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  password    String
-  firstName   String
-  lastName    String
-  role        Role     @default(USER)
-  department  String?
+  id           String    @id @default(cuid())
+  email        String    @unique
+  password     String
+  firstName    String
+  lastName     String
+  role         Role      @default(USER)
+  department   String?
   organization String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  lastLoginAt DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+  tenantId     String
+  oidcSubject  String?   @unique
 
   // Relations
-  createdVendors    Vendor[]     @relation("CreatedBy")
-  evaluatedBids     BidEvaluation[]
-  complianceChecks  ComplianceCheck[]
-  auditLogs         AuditLog[]
-  notifications     Notification[]
+  createdVendors   Vendor[]          @relation("CreatedBy")
+  evaluatedBids    BidEvaluation[]
+  complianceChecks ComplianceCheck[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@unique([id, tenantId])
+  @@index([tenantId])
   @@map("users")
 }
 
 model Vendor {
-  id                String   @id @default(cuid())
-  name              String
-  registrationNumber String? @unique
-  email             String?
-  phone             String?
-  website           String?
-  address           Json?
-  
+  id                 String  @id @default(cuid())
+  name               String
+  registrationNumber String?
+  email              String?
+  phone              String?
+  website            String?
+  address            Json?
+
   // Business Information
-  businessType      String?
-  industryType      String?
-  yearEstablished   Int?
-  employeeCount     Int?
-  annualRevenue     Float?
-  
+  businessType    String?
+  industryType    String?
+  yearEstablished Int?
+  employeeCount   Int?
+  annualRevenue   Float?
+
   // Qualification Scores
-  overallScore      Float?
-  financialScore    Float?
-  technicalScore    Float?
-  complianceScore   Float?
-  experienceScore   Float?
-  riskLevel         RiskLevel @default(MEDIUM)
-  
+  overallScore    Float?
+  financialScore  Float?
+  technicalScore  Float?
+  complianceScore Float?
+  experienceScore Float?
+  riskLevel       RiskLevel @default(MEDIUM)
+
   // Status
   qualificationStatus QualificationStatus @default(PENDING)
-  isActive          Boolean  @default(true)
-  
+  isActive            Boolean             @default(true)
+
   // Metadata
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  createdById       String
-  createdBy         User     @relation("CreatedBy", fields: [createdById], references: [id])
-  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  tenantId    String
+  createdBy   User     @relation("CreatedBy", fields: [createdById, tenantId], references: [id, tenantId])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
   // Relations
-  bids              Bid[]
-  documents         VendorDocument[]
-  evaluations       VendorEvaluation[]
-  complianceChecks  ComplianceCheck[]
-  
+  bids             Bid[]
+  documents        VendorDocument[]
+  evaluations      VendorEvaluation[]
+  complianceChecks ComplianceCheck[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, registrationNumber])
+  @@index([tenantId, createdAt])
   @@map("vendors")
 }
 
 model VendorDocument {
-  id          String   @id @default(cuid())
-  vendorId    String
-  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  
+  id       String @id @default(cuid())
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
   documentType DocumentType
-  fileName    String
-  fileUrl     String
-  fileSize    Int
-  mimeType    String
-  
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+
   // AI Analysis
-  extractedText String?
-  embedding     Float[]?
+  extractedText  String?
+  embedding      Float[] @default([])
   analysisResult Json?
-  
-  uploadedAt  DateTime @default(now())
-  
+
+  uploadedAt DateTime @default(now())
+
   @@map("vendor_documents")
 }
 
 model Bid {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?
-  rfpNumber       String?
-  vendorId        String
-  vendor          Vendor   @relation(fields: [vendorId], references: [id])
-  
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+  rfpNumber   String?
+  vendorId    String
+  tenantId    String
+  vendor      Vendor  @relation(fields: [vendorId, tenantId], references: [id, tenantId])
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
   // Bid Details
-  proposedAmount  Float?
-  proposedTimeline Int? // in days
+  proposedAmount    Float?
+  proposedTimeline  Int? // in days
   technicalApproach String?
-  
+
   // Status
-  status          BidStatus @default(SUBMITTED)
-  submittedAt     DateTime @default(now())
-  evaluatedAt     DateTime?
-  
+  status      BidStatus @default(SUBMITTED)
+  submittedAt DateTime  @default(now())
+  evaluatedAt DateTime?
+
   // AI Scores
-  technicalScore  Float?
-  costScore       Float?
-  timelineScore   Float?
-  riskScore       Float?
-  overallScore    Float?
-  
+  technicalScore Float?
+  costScore      Float?
+  timelineScore  Float?
+  riskScore      Float?
+  overallScore   Float?
+
   // Relations
-  documents       BidDocument[]
-  evaluations     BidEvaluation[]
-  
+  documents   BidDocument[]
+  evaluations BidEvaluation[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, submittedAt])
   @@map("bids")
 }
 
 model BidDocument {
-  id          String   @id @default(cuid())
-  bidId       String
-  bid         Bid      @relation(fields: [bidId], references: [id], onDelete: Cascade)
-  
+  id    String @id @default(cuid())
+  bidId String
+  bid   Bid    @relation(fields: [bidId], references: [id], onDelete: Cascade)
+
   documentType DocumentType
-  fileName    String
-  fileUrl     String
-  fileSize    Int
-  mimeType    String
-  
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+
   // AI Analysis
-  extractedText String?
-  embedding     Float[]?
+  extractedText  String?
+  embedding      Float[] @default([])
   analysisResult Json?
-  
-  uploadedAt  DateTime @default(now())
-  
+
+  uploadedAt DateTime @default(now())
+
   @@map("bid_documents")
 }
 
 model BidEvaluation {
-  id            String   @id @default(cuid())
-  bidId         String
-  bid           Bid      @relation(fields: [bidId], references: [id])
-  evaluatorId   String
-  evaluator     User     @relation(fields: [evaluatorId], references: [id])
-  
+  id          String @id @default(cuid())
+  bidId       String
+  bid         Bid    @relation(fields: [bidId], references: [id])
+  evaluatorId String
+  evaluator   User   @relation(fields: [evaluatorId], references: [id])
+
   // Evaluation Scores
-  technicalScore    Float
-  costScore         Float
-  timelineScore     Float
-  riskScore         Float
-  overallScore      Float
-  
+  technicalScore Float
+  costScore      Float
+  timelineScore  Float
+  riskScore      Float
+  overallScore   Float
+
   // Comments
-  strengths         String[]
-  weaknesses        String[]
-  recommendations   String[]
-  comments          String?
-  
-  status            EvaluationStatus @default(IN_PROGRESS)
-  evaluatedAt       DateTime @default(now())
-  
+  strengths       String[]
+  weaknesses      String[]
+  recommendations String[]
+  comments        String?
+
+  status      EvaluationStatus @default(IN_PROGRESS)
+  evaluatedAt DateTime         @default(now())
+
   @@unique([bidId, evaluatorId])
   @@map("bid_evaluations")
 }
 
 model VendorEvaluation {
-  id            String   @id @default(cuid())
-  vendorId      String
-  vendor        Vendor   @relation(fields: [vendorId], references: [id])
-  
+  id       String @id @default(cuid())
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+
   // Evaluation Details
   evaluationType String
   overallScore   Float
   categoryScores Json
   riskLevel      RiskLevel
-  
+
   // AI Analysis Results
-  strengths      String[]
-  weaknesses     String[]
+  strengths       String[]
+  weaknesses      String[]
   recommendations String[]
-  
-  evaluatedAt    DateTime @default(now())
-  
+
+  evaluatedAt DateTime @default(now())
+
   @@map("vendor_evaluations")
 }
 
 model ComplianceCheck {
-  id                String   @id @default(cuid())
-  entityType        String   // 'vendor' or 'bid'
-  entityId          String
-  
+  id         String @id @default(cuid())
+  entityType String // 'vendor' or 'bid'
+  entityId   String
+
   // For vendor compliance
-  vendorId          String?
-  vendor            Vendor?  @relation(fields: [vendorId], references: [id])
-  
+  vendorId String?
+  vendor   Vendor? @relation(fields: [vendorId], references: [id])
+
   // Check Details
-  regulationType    String
-  regulationName    String
-  checkResult       ComplianceResult
-  complianceScore   Float
-  
+  regulationType  String
+  regulationName  String
+  checkResult     ComplianceResult
+  complianceScore Float
+
   // Issues and Recommendations
-  issues            String[]
-  criticalIssues    String[]
-  recommendations   String[]
-  
+  issues          String[]
+  criticalIssues  String[]
+  recommendations String[]
+
   // Metadata
-  checkedAt         DateTime @default(now())
-  checkedById       String
-  checkedBy         User     @relation(fields: [checkedById], references: [id])
-  
+  checkedAt   DateTime @default(now())
+  checkedById String
+  checkedBy   User     @relation(fields: [checkedById], references: [id])
+
   @@map("compliance_checks")
 }
 
 model Notification {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  
-  type        NotificationType
-  title       String
-  message     String
-  priority    Priority @default(MEDIUM)
-  
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  type     NotificationType
+  title    String
+  message  String
+  priority Priority         @default(MEDIUM)
+
   // Metadata
-  isRead      Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  readAt      DateTime?
-  
+  isRead    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
   @@map("notifications")
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  
-  action      String
-  entityType  String
-  entityId    String
-  
+  id       String @id @default(cuid())
+  userId   String
+  tenantId String
+  user     User   @relation(fields: [userId, tenantId], references: [id, tenantId])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  action     String
+  entityType String
+  entityId   String
+
   // Change Details
-  oldValues   Json?
-  newValues   Json?
-  
+  oldValues Json?
+  newValues Json?
+
   // Metadata
-  ipAddress   String?
-  userAgent   String?
-  timestamp   DateTime @default(now())
-  
+  ipAddress String?
+  userAgent String?
+  timestamp DateTime @default(now())
+
+  @@index([tenantId, timestamp])
   @@map("audit_logs")
 }
 

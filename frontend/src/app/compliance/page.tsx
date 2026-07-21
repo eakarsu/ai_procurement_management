@@ -37,7 +37,7 @@ export default function CompliancePage() {
     title: '',
     category: '',
     description: '',
-    severity: 'medium' as const,
+    severity: 'medium' as ComplianceCheck['severity'],
     vendor_name: ''
   });
   const router = useRouter();

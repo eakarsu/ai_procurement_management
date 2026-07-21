@@ -1,140 +1,58 @@
-import express from 'express';
+import { Router } from 'express';
+import { prisma } from '../lib/prisma';
+import { AuthRequest, requireRole } from '../middleware/auth';
 
-const router = express.Router();
+const router = Router();
+const transitions: Record<string, string[]> = {
+  SUBMITTED: ['UNDER_EVALUATION', 'REJECTED'],
+  UNDER_EVALUATION: ['EVALUATED', 'REJECTED'],
+  EVALUATED: ['AWARDED', 'REJECTED'],
+};
 
-// Mock bid data
-const bids = [
-  {
-    id: 1,
-    title: 'Software Development Services',
-    description: 'Full-stack web development for procurement system',
-    budget: 50000,
-    deadline: '2024-12-31',
-    status: 'open',
-    vendorId: 1,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 2,
-    title: 'Database Migration Services',
-    description: 'Migration from legacy system to modern database',
-    budget: 25000,
-    deadline: '2024-11-30',
-    status: 'in_progress',
-    vendorId: 2,
-    createdAt: new Date().toISOString()
-  }
-];
-
-// Get all bids
-router.get('/', (req, res) => {
-  res.json({
-    success: true,
-    data: bids
-  });
+router.get('/', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await prisma.bid.findMany({ where: { tenantId: req.user!.tenantId }, include: { vendor: true }, orderBy: { submittedAt: 'desc' } });
+    return res.json({ success: true, data });
+  } catch (error) { return next(error); }
 });
 
-// Get bid by ID
-router.get('/:id', (req, res) => {
-  const bid = bids.find(b => b.id === parseInt(req.params.id));
-  
-  if (!bid) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bid not found'
-    });
-  }
-
-  return res.json({
-    success: true,
-    data: bid
-  });
+router.get('/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await prisma.bid.findUnique({ where: { id_tenantId: { id: String(req.params.id), tenantId: req.user!.tenantId } }, include: { vendor: true, evaluations: true } });
+    return data ? res.json({ success: true, data }) : res.status(404).json({ success: false, message: 'Bid not found' });
+  } catch (error) { return next(error); }
 });
 
-// Create new bid
-router.post('/', (req, res) => {
-  const { title, description, budget, deadline, vendorId } = req.body;
-
-  if (!title || !description || !budget || !deadline) {
-    return res.status(400).json({
-      success: false,
-      message: 'Title, description, budget, and deadline are required'
-    });
-  }
-
-  const newBid = {
-    id: bids.length + 1,
-    title,
-    description,
-    budget: parseFloat(budget),
-    deadline,
-    status: 'open',
-    vendorId: vendorId || null,
-    createdAt: new Date().toISOString()
-  };
-
-  bids.push(newBid);
-
-  return res.status(201).json({
-    success: true,
-    data: newBid
-  });
+router.post('/', requireRole('ADMIN', 'PROCUREMENT_MANAGER'), async (req: AuthRequest, res, next) => {
+  try {
+    const { title, description, budget, proposedAmount, vendorId, proposedTimeline, technicalApproach } = req.body ?? {};
+    const amount = Number(proposedAmount ?? budget);
+    if (!title || !vendorId || !Number.isFinite(amount) || amount <= 0) return res.status(400).json({ success: false, message: 'Title, vendor, and a positive amount are required' });
+    const tenantId = req.user!.tenantId;
+    const vendor = await prisma.vendor.findUnique({ where: { id_tenantId: { id: vendorId, tenantId } } });
+    if (!vendor?.isActive) return res.status(409).json({ success: false, message: 'Active tenant vendor required' });
+    const data = await prisma.bid.create({ data: { title, description, proposedAmount: amount, proposedTimeline: proposedTimeline ? Number(proposedTimeline) : null, technicalApproach, vendorId, tenantId, status: 'SUBMITTED' } });
+    return res.status(201).json({ success: true, data });
+  } catch (error) { return next(error); }
 });
 
-// Update bid
-router.put('/:id', (req, res) => {
-  const bidIndex = bids.findIndex(b => b.id === parseInt(req.params.id));
-  
-  if (bidIndex === -1) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bid not found'
-    });
-  }
-
-  const { title, description, budget, deadline, status, vendorId } = req.body;
-  const currentBid = bids[bidIndex];
-  
-  if (!currentBid) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bid not found'
-    });
-  }
-  
-  bids[bidIndex] = {
-    ...currentBid,
-    title: title || currentBid.title,
-    description: description || currentBid.description,
-    budget: budget ? parseFloat(budget) : currentBid.budget,
-    deadline: deadline || currentBid.deadline,
-    status: status || currentBid.status,
-    vendorId: vendorId !== undefined ? vendorId : currentBid.vendorId
-  };
-
-  return res.json({
-    success: true,
-    data: bids[bidIndex]
-  });
+router.patch('/:id/status', requireRole('ADMIN', 'PROCUREMENT_MANAGER', 'EVALUATOR'), async (req: AuthRequest, res, next) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const current = await prisma.bid.findUnique({ where: { id_tenantId: { id: String(req.params.id), tenantId } } });
+    const target = String(req.body?.status ?? '');
+    if (!current) return res.status(404).json({ success: false, message: 'Bid not found' });
+    if (!transitions[current.status]?.includes(target)) return res.status(409).json({ success: false, message: 'Invalid bid status transition' });
+    const data = await prisma.bid.update({ where: { id_tenantId: { id: current.id, tenantId } }, data: { status: target as never, ...(target === 'EVALUATED' ? { evaluatedAt: new Date() } : {}) } });
+    return res.json({ success: true, data });
+  } catch (error) { return next(error); }
 });
 
-// Delete bid
-router.delete('/:id', (req, res) => {
-  const bidIndex = bids.findIndex(b => b.id === parseInt(req.params.id));
-  
-  if (bidIndex === -1) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bid not found'
-    });
-  }
-
-  bids.splice(bidIndex, 1);
-
-  return res.json({
-    success: true,
-    message: 'Bid deleted successfully'
-  });
+router.delete('/:id', requireRole('ADMIN', 'PROCUREMENT_MANAGER'), async (req: AuthRequest, res, next) => {
+  try {
+    const result = await prisma.bid.deleteMany({ where: { id: String(req.params.id), tenantId: req.user!.tenantId } });
+    return result.count ? res.status(204).send() : res.status(404).json({ success: false, message: 'Bid not found' });
+  } catch (error) { return next(error); }
 });
 
 export default router;

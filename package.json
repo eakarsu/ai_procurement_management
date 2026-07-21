@@ -12,7 +12,8 @@
     "start": "concurrently \"npm run backend:start\" \"npm run frontend:start\"",
     "backend:start": "cd backend && npm start",
     "frontend:start": "cd frontend && npm start",
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "test": "node --test workflow/*.test.cjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

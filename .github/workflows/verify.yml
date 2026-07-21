@@ -1,0 +1,29 @@
+name: verify
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: test, POSTGRES_DB: procurement }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/procurement
+      JWT_SECRET: test-only-secret-with-at-least-32-characters
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      RUN_DB_TESTS: 'true'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci && npm ci --prefix backend && npm ci --prefix frontend
+      - run: cd backend && npx prisma generate && npx prisma migrate deploy
+      - run: npm run build
+      - run: npm test
+      - run: npm --prefix backend audit --omit=dev --audit-level=high
+      - run: npm --prefix frontend audit --omit=dev --audit-level=high
+      - run: cd backend && npx prisma migrate deploy
+      - run: docker build -t procurement-backend ./backend && docker build -t procurement-frontend ./frontend
