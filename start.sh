@@ -1,63 +1,54 @@
-#!/bin/sh
-set -eu
-cd "$(dirname "$0")"
-mode="${1:-check}"
-require_config() {
-  : "${DATABASE_URL:?DATABASE_URL is required}"
-  if [ "${AUTH_MODE:-local}" = oidc ]; then
-    : "${OIDC_ISSUER:?OIDC_ISSUER is required}"; : "${OIDC_AUDIENCE:?OIDC_AUDIENCE is required}"; : "${OIDC_JWKS_URL:?OIDC_JWKS_URL is required}"
-  else
-    : "${JWT_SECRET:?JWT_SECRET is required}"; [ "${#JWT_SECRET}" -ge 32 ] || { echo 'JWT_SECRET must be at least 32 characters' >&2; exit 1; }
-  fi
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+set -a
+source "$project_dir/.env"
+set +a
+
+: "${DATABASE_URL:?DATABASE_URL is required}"
+: "${JWT_SECRET:?JWT_SECRET is required}"
+: "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}"
+: "${OPENROUTER_MODEL:?OPENROUTER_MODEL is required}"
+: "${OPENROUTER_BASE_URL:?OPENROUTER_BASE_URL is required}"
+[[ "${#JWT_SECRET}" -ge 32 ]] || { echo 'JWT_SECRET must be at least 32 characters' >&2; exit 1; }
+backend_port="${BACKEND_PORT:?BACKEND_PORT is required}"
+frontend_port="${FRONTEND_PORT:?FRONTEND_PORT is required}"
+[[ "$backend_port" != "$frontend_port" ]] || { echo 'BACKEND_PORT and FRONTEND_PORT must differ' >&2; exit 1; }
+for port in "$backend_port" "$frontend_port"; do
+  ! lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 || { echo "port $port is already in use" >&2; exit 1; }
+done
+
+if [[ "${MIGRATE_ON_START:-false}" == "true" ]]; then
+  (cd "$project_dir/backend" && npx prisma migrate deploy)
+fi
+export BOOTSTRAP_ACKNOWLEDGEMENT=create-initial-admin
+export PROVISION_ADMIN_EMAIL="${ADMIN_EMAIL:?ADMIN_EMAIL is required}"
+export PROVISION_ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
+export PROVISION_ADMIN_NAME="${PROVISION_ADMIN_NAME:-Runtime Administrator}"
+export PROVISION_COMPANY_NAME="${PROVISION_COMPANY_NAME:-Runtime Procurement}"
+export ENABLE_EXPERIMENTAL_ROUTES=true
+(cd "$project_dir/backend" && node scripts/provision-admin.cjs)
+
+cleanup() {
+  trap - INT TERM EXIT
+  [[ -z "${frontend_pid:-}" ]] || kill "$frontend_pid" 2>/dev/null || true
+  [[ -z "${backend_pid:-}" ]] || kill "$backend_pid" 2>/dev/null || true
+  [[ -z "${frontend_pid:-}" ]] || wait "$frontend_pid" 2>/dev/null || true
+  [[ -z "${backend_pid:-}" ]] || wait "$backend_pid" 2>/dev/null || true
 }
-start_services() {
-  backend_dir="$(pwd)/backend"
-  frontend_dir="$(pwd)/frontend"
-  if [ -n "${RUNTIME_PROJECT_SOURCE:-}" ] && [ -d "$RUNTIME_PROJECT_SOURCE/backend" ] && [ -d "$RUNTIME_PROJECT_SOURCE/frontend" ]; then
-    backend_dir="$RUNTIME_PROJECT_SOURCE/backend"
-    frontend_dir="$RUNTIME_PROJECT_SOURCE/frontend"
-  fi
-  backend_port="${BACKEND_PORT:-${PORT:-3001}}"
-  frontend_port="${FRONTEND_PORT:-3000}"
-  backend_host="${BACKEND_HOST:-${HOST:-127.0.0.1}}"
-  frontend_host="${FRONTEND_HOST:-127.0.0.1}"
-  if [ "$backend_port" = "$frontend_port" ]; then
-    echo 'BACKEND_PORT and FRONTEND_PORT must be different' >&2
-    exit 1
-  fi
+trap cleanup INT TERM EXIT
 
-  cleanup_services() {
-    trap - INT TERM EXIT
-    [ -z "${frontend_pid:-}" ] || kill "$frontend_pid" 2>/dev/null || true
-    [ -z "${backend_pid:-}" ] || kill "$backend_pid" 2>/dev/null || true
-    [ -z "${frontend_pid:-}" ] || wait "$frontend_pid" 2>/dev/null || true
-    [ -z "${backend_pid:-}" ] || wait "$backend_pid" 2>/dev/null || true
-  }
-  trap cleanup_services INT TERM EXIT
-
-  PORT="$backend_port" HOST="$backend_host" \
-    CLIENT_URL="${CLIENT_URL:-http://$frontend_host:$frontend_port}" \
-    CORS_ORIGIN="${CORS_ORIGIN:-http://$frontend_host:$frontend_port}" \
-    npm --prefix "$backend_dir" start &
-  backend_pid=$!
-  attempts=0
-  until curl -fsS "http://127.0.0.1:$backend_port/api/health" >/dev/null 2>&1; do
-    kill -0 "$backend_pid" 2>/dev/null || { wait "$backend_pid"; exit $?; }
-    attempts=$((attempts + 1))
-    [ "$attempts" -lt "${STARTUP_TIMEOUT_SECONDS:-30}" ] || { echo 'backend readiness timed out' >&2; exit 1; }
-    sleep 1
-  done
-
-  PORT="$frontend_port" HOSTNAME="$frontend_host" \
-    NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://127.0.0.1:$backend_port}" \
-    npm --prefix "$frontend_dir" start -- --hostname "$frontend_host" --port "$frontend_port" &
-  frontend_pid=$!
-  while kill -0 "$backend_pid" 2>/dev/null && kill -0 "$frontend_pid" 2>/dev/null; do sleep 1; done
-  if ! kill -0 "$backend_pid" 2>/dev/null; then wait "$backend_pid"; else wait "$frontend_pid"; fi
-}
-case "$mode" in
-  check) npm run build && npm run test ;;
-  migrate) require_config; [ "${ALLOW_SCHEMA_MIGRATION:-}" = 1 ] || { echo 'Set ALLOW_SCHEMA_MIGRATION=1' >&2; exit 1; }; (cd backend && npx prisma migrate deploy) ;;
-  start) require_config; start_services ;;
-  *) echo 'usage: ./start.sh check|migrate|start' >&2; exit 2 ;;
-esac
+PORT="$backend_port" NODE_ENV=development npm --prefix "$project_dir/backend" start &
+backend_pid=$!
+for ((attempt=0; attempt<60; attempt++)); do
+  curl -fsS "http://127.0.0.1:$backend_port/api/health" >/dev/null 2>&1 && break
+  kill -0 "$backend_pid" 2>/dev/null || { wait "$backend_pid"; exit $?; }
+  sleep 1
+done
+curl -fsS "http://127.0.0.1:$backend_port/api/health" >/dev/null
+PORT="$frontend_port" HOSTNAME=127.0.0.1 NODE_ENV=production \
+  NEXT_PUBLIC_API_URL="http://127.0.0.1:$backend_port" \
+  npm --prefix "$project_dir/frontend" start -- --hostname 127.0.0.1 --port "$frontend_port" &
+frontend_pid=$!
+wait "$backend_pid" "$frontend_pid"

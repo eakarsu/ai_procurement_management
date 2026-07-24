@@ -16,7 +16,14 @@ async function main() {
   }
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    console.log(JSON.stringify({ event: 'initial_admin_exists', userId: existing.id }));
+    const parts = name.split(/\s+/);
+    const firstName = parts.shift();
+    const lastName = parts.join(' ') || 'Administrator';
+    const user = await prisma.user.update({ where: { email }, data: {
+      password: await bcrypt.hash(password, 10), firstName, lastName,
+      role: 'ADMIN', organization: company, isActive: true,
+    } });
+    console.log(JSON.stringify({ event: 'initial_admin_updated', userId: user.id }));
     return;
   }
   const parts = name.split(/\s+/);
@@ -27,7 +34,7 @@ async function main() {
     return transaction.user.create({
       data: {
         email,
-        password: await bcrypt.hash(password, 12),
+        password: await bcrypt.hash(password, 10),
         firstName,
         lastName,
         role: 'ADMIN',

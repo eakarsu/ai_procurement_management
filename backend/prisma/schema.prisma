@@ -292,6 +292,20 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model AiResult {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  feature   String
+  input     Json
+  output    String
+  model     String
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("ai_results")
+}
+
 // Enums
 enum Role {
   ADMIN

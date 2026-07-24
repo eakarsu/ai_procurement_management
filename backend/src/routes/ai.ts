@@ -1,7 +1,44 @@
 import express from 'express';
 import { AIService } from '../services/aiService';
+import { AuthRequest } from '../middleware/auth';
+import { prisma } from '../lib/prisma';
 
 const router = express.Router();
+
+router.post('/runtime-brief', async (req: AuthRequest, res) => {
+  try {
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required' });
+    if (!req.user) return res.status(401).json({ success: false, error: 'Authentication required' });
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const baseUrl = process.env.OPENROUTER_BASE_URL;
+    const model = process.env.OPENROUTER_MODEL;
+    if (!apiKey || !baseUrl || !model) throw new Error('OpenRouter runtime is not configured');
+    const providerResponse = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: 'You are a procurement operations reviewer. Return concise risks, evidence gaps, next actions, uncertainty, and required human review.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.2,
+      }),
+    });
+    if (!providerResponse.ok) throw new Error(`OpenRouter returned ${providerResponse.status}`);
+    const payload: any = await providerResponse.json();
+    const output = String(payload?.choices?.[0]?.message?.content || '').trim();
+    if (!output) throw new Error('OpenRouter returned an empty response');
+    const saved = await prisma.aiResult.create({
+      data: { tenantId: req.user.tenantId, userId: req.user.id, feature: 'runtime-brief', input: { prompt }, output, model },
+    });
+    return res.json({ success: true, id: saved.id, response: output, model, provider: 'openrouter' });
+  } catch (error) {
+    console.error('Error generating runtime procurement brief:', error);
+    return res.status(502).json({ success: false, error: 'OpenRouter request failed' });
+  }
+});
 
 // Generate AI insights for procurement data
 router.post('/insights', async (req, res) => {
