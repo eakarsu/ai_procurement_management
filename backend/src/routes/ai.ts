@@ -5,6 +5,22 @@ import { prisma } from '../lib/prisma';
 
 const router = express.Router();
 
+router.get('/runtime-brief/history', async (req: AuthRequest, res) => {
+  if (!req.user) return res.status(401).json({ success: false, error: 'Authentication required' });
+  try {
+    const results = await prisma.aiResult.findMany({
+      where: { tenantId: req.user.tenantId, userId: req.user.id, feature: 'runtime-brief' },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: { id: true, input: true, output: true, model: true, createdAt: true },
+    });
+    return res.json({ success: true, results });
+  } catch (error) {
+    console.error('Error loading saved runtime briefs:', error);
+    return res.status(500).json({ success: false, error: 'Saved briefs are unavailable' });
+  }
+});
+
 router.post('/runtime-brief', async (req: AuthRequest, res) => {
   try {
     const prompt = String(req.body?.prompt || '').trim();

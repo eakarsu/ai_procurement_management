@@ -1,5 +1,6 @@
 'use client';
 
+import AIResponseReport from "../../components/AIResponseReport";
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -19,6 +20,13 @@ interface DashboardStats {
   complianceScore: number;
 }
 
+const analysisPresets = [
+  { label: 'Vendor performance', analysisType: 'vendor-optimization', focus: 'Compare supplier delivery reliability and contract performance.', context: 'Prioritize measurable service levels and repeat purchasing patterns.', constraints: 'Flag missing supplier evidence for human review.' },
+  { label: 'Cost reduction', analysisType: 'cost-reduction', focus: 'Identify practical savings in recurring procurement spend.', context: 'Consider volume consolidation, renewal timing, and total cost.', constraints: 'Preserve quality and existing contract obligations.' },
+  { label: 'Risk review', analysisType: 'risk-assessment', focus: 'Assess supplier and purchasing continuity risks.', context: 'Highlight concentration, delivery delays, and financial exposure.', constraints: 'Distinguish observed facts from assumptions.' },
+  { label: 'Compliance review', analysisType: 'compliance-review', focus: 'Review procurement controls and approval gaps.', context: 'Consider purchasing approvals, documentation, and audit readiness.', constraints: 'Identify evidence needed before making a compliance conclusion.' },
+];
+
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -26,6 +34,8 @@ export default function DashboardPage() {
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const [aiResults, setAiResults] = useState<any>(null);
+  const [analysisForm, setAnalysisForm] = useState({ analysisType: '', focus: '', context: '', constraints: '' });
+  const [analysisError, setAnalysisError] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -70,10 +80,13 @@ export default function DashboardPage() {
     setShowAIModal(true);
   };
 
-  const runAIAnalysis = async (analysisType: string) => {
+  const runAIAnalysis = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     const token = localStorage.getItem('token');
     if (!token) return;
+    if (!stats) { setAnalysisError('Dashboard statistics are unavailable. Load them before running an analysis.'); return; }
 
+    setAnalysisError('');
     setAiAnalysisLoading(true);
     try {
       const response = await fetch('http://localhost:3001/api/ai/recommendations', {
@@ -85,7 +98,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           procurementData: {
             stats: stats,
-            analysisType: analysisType,
+            ...analysisForm,
             timestamp: new Date().toISOString()
           }
         }),
@@ -94,9 +107,11 @@ export default function DashboardPage() {
       if (response.ok) {
         const data = await response.json();
         setAiResults(data.data);
+      } else {
+        setAnalysisError('Analysis could not be completed. Check the AI service configuration and try again.');
       }
     } catch (error) {
-      console.error('Error running AI analysis:', error);
+      setAnalysisError('The AI service could not be reached.');
     } finally {
       setAiAnalysisLoading(false);
     }
@@ -321,49 +336,17 @@ export default function DashboardPage() {
               
               {!aiResults ? (
                 <div>
-                  <p className="text-sm text-gray-600 mb-4">Select the type of AI analysis you want to run:</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                      onClick={() => runAIAnalysis('vendor-optimization')}
-                      disabled={aiAnalysisLoading}
-                      className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-                    >
-                      <div className="text-left">
-                        <h4 className="font-medium text-gray-900">Vendor Optimization</h4>
-                        <p className="text-sm text-gray-600 mt-1">Analyze vendor performance and suggest improvements</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => runAIAnalysis('cost-reduction')}
-                      disabled={aiAnalysisLoading}
-                      className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-                    >
-                      <div className="text-left">
-                        <h4 className="font-medium text-gray-900">Cost Reduction</h4>
-                        <p className="text-sm text-gray-600 mt-1">Identify opportunities to reduce procurement costs</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => runAIAnalysis('risk-assessment')}
-                      disabled={aiAnalysisLoading}
-                      className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-                    >
-                      <div className="text-left">
-                        <h4 className="font-medium text-gray-900">Risk Assessment</h4>
-                        <p className="text-sm text-gray-600 mt-1">Evaluate procurement risks and mitigation strategies</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => runAIAnalysis('compliance-review')}
-                      disabled={aiAnalysisLoading}
-                      className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-                    >
-                      <div className="text-left">
-                        <h4 className="font-medium text-gray-900">Compliance Review</h4>
-                        <p className="text-sm text-gray-600 mt-1">Review compliance status and suggest improvements</p>
-                      </div>
-                    </button>
-                  </div>
+                  <p className="text-sm text-gray-600 mb-4">Choose a sample to fill every field, then review it before running the analysis.</p>
+                  <div className="grid grid-cols-2 gap-2 mb-4">{analysisPresets.map(preset => <button key={preset.analysisType} type="button" onClick={() => { setAnalysisForm({ analysisType: preset.analysisType, focus: preset.focus, context: preset.context, constraints: preset.constraints }); setAnalysisError(''); }} className="rounded border border-gray-300 p-3 text-left text-sm hover:bg-gray-50">{preset.label}</button>)}</div>
+                  <form onSubmit={runAIAnalysis} className="space-y-3">
+                    <label className="block text-sm font-medium">Analysis type<select required value={analysisForm.analysisType} onChange={event => setAnalysisForm({ ...analysisForm, analysisType: event.target.value })} className="mt-1 block w-full rounded border p-2"><option value="">Choose an analysis</option>{analysisPresets.map(preset => <option key={preset.analysisType} value={preset.analysisType}>{preset.label}</option>)}</select></label>
+                    <label className="block text-sm font-medium">Focus<textarea required value={analysisForm.focus} onChange={event => setAnalysisForm({ ...analysisForm, focus: event.target.value })} className="mt-1 block w-full rounded border p-2" /></label>
+                    <label className="block text-sm font-medium">Context (optional)<textarea value={analysisForm.context} onChange={event => setAnalysisForm({ ...analysisForm, context: event.target.value })} className="mt-1 block w-full rounded border p-2" /></label>
+                    <label className="block text-sm font-medium">Constraints (optional)<textarea value={analysisForm.constraints} onChange={event => setAnalysisForm({ ...analysisForm, constraints: event.target.value })} className="mt-1 block w-full rounded border p-2" /></label>
+                    {!stats && <p role="status" className="text-sm text-amber-700">Dashboard statistics are required and currently unavailable.</p>}
+                    {analysisError && <p role="alert" className="text-sm text-red-700">{analysisError}</p>}
+                    <button type="submit" disabled={aiAnalysisLoading || !stats} className="rounded bg-purple-600 px-4 py-2 text-white disabled:opacity-50">Run analysis</button>
+                  </form>
                   
                   {aiAnalysisLoading && (
                     <div className="mt-4 flex items-center justify-center">
@@ -376,9 +359,7 @@ export default function DashboardPage() {
                 <div>
                   <h4 className="font-medium text-gray-900 mb-3">Analysis Results</h4>
                   <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                    <pre className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {JSON.stringify(aiResults, null, 2)}
-                    </pre>
+                    <AIResponseReport value={aiResults}/>
                   </div>
                   <div className="mt-4 flex justify-end">
                     <button

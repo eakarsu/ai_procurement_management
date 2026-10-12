@@ -3,6 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import AIResponseReport from '../../components/AIResponseReport';
+
+const briefPresets = [
+  { label: 'Supplier continuity', prompt: 'Review supplier continuity risks for the current procurement portfolio. Identify evidence gaps, potential impacts, next actions, uncertainty, and decisions requiring human review.' },
+  { label: 'Renewal readiness', prompt: 'Prepare a procurement renewal brief. Examine timing, contract evidence, pricing assumptions, approval needs, and practical next actions. Mark any missing source data as unknown.' },
+  { label: 'Approval controls', prompt: 'Review purchasing approval controls and audit readiness. Summarize observed risks, evidence still needed, recommended actions, uncertainty, and required human review.' },
+];
+
+interface SavedBrief { id: string; input: unknown; output: string; model: string; createdAt: string }
 
 interface AIInsight {
   id: number;
@@ -32,6 +41,11 @@ export default function AIAnalysisPage() {
   const [user, setUser] = useState<any>(null);
   const [filter, setFilter] = useState('all');
   const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [briefPrompt, setBriefPrompt] = useState('');
+  const [briefs, setBriefs] = useState<SavedBrief[]>([]);
+  const [selectedBrief, setSelectedBrief] = useState<SavedBrief | null>(null);
+  const [briefRunning, setBriefRunning] = useState(false);
+  const [briefError, setBriefError] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -45,7 +59,38 @@ export default function AIAnalysisPage() {
 
     setUser(JSON.parse(userData));
     fetchAIAnalysis(token);
+    fetchBriefs(token);
   }, [router]);
+
+  const fetchBriefs = async (token: string) => {
+    try {
+      const response = await fetch('http://localhost:3001/api/ai/runtime-brief/history', { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error('Saved briefs are unavailable');
+      const body = await response.json();
+      setBriefs(body.results || []);
+    } catch {
+      setBriefError('Saved briefs could not be loaded.');
+    }
+  };
+
+  const runBrief = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const token = localStorage.getItem('token');
+    if (!token) { setBriefError('Sign in before generating a brief.'); return; }
+    setBriefRunning(true);
+    setBriefError('');
+    try {
+      const response = await fetch('http://localhost:3001/api/ai/runtime-brief', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: briefPrompt }) });
+      if (!response.ok) throw new Error('Generation failed');
+      const body = await response.json();
+      setSelectedBrief({ id: body.id, input: { prompt: briefPrompt }, output: body.response, model: body.model, createdAt: new Date().toISOString() });
+      await fetchBriefs(token);
+    } catch {
+      setBriefError('The AI brief could not be generated. Check the configured service and try again.');
+    } finally {
+      setBriefRunning(false);
+    }
+  };
 
   const fetchAIAnalysis = async (token: string) => {
     try {
@@ -162,6 +207,20 @@ export default function AIAnalysisPage() {
       </header>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <section className="mb-8 rounded-lg bg-white p-6 shadow" aria-label="Procurement brief">
+          <h2 className="text-xl font-semibold">Procurement brief</h2>
+          <p className="mt-1 text-sm text-gray-600">Choose a sample to fill the prompt, review it, then generate a brief.</p>
+          <div className="mt-4 flex flex-wrap gap-2">{briefPresets.map(preset => <button key={preset.label} type="button" onClick={() => setBriefPrompt(preset.prompt)} className="rounded border border-gray-300 px-3 py-2 text-sm">{preset.label}</button>)}</div>
+          <form onSubmit={runBrief} className="mt-4 space-y-3">
+            <label className="block text-sm font-medium">Prompt<textarea required value={briefPrompt} onChange={event => setBriefPrompt(event.target.value)} className="mt-1 block w-full rounded border p-3" rows={4} /></label>
+            <button type="submit" disabled={briefRunning} className="rounded bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">{briefRunning ? 'Generating...' : 'Generate brief'}</button>
+          </form>
+          {briefError && <p role="alert" className="mt-3 text-sm text-red-700">{briefError}</p>}
+          {selectedBrief && <div className="mt-5"><AIResponseReport value={{ result_json: selectedBrief.output, model: selectedBrief.model }} title="Procurement brief" /></div>}
+          <h3 className="mt-6 font-semibold">Saved briefs</h3>
+          {briefs.length === 0 && <p className="mt-2 text-sm text-gray-600">No saved briefs are available.</p>}
+          <ul className="mt-2 space-y-2">{briefs.map(brief => <li key={brief.id}><button type="button" onClick={() => setSelectedBrief(brief)} className="text-left text-sm text-indigo-700 underline">{new Date(brief.createdAt).toLocaleString()} · Procurement brief</button></li>)}</ul>
+        </section>
         {/* AI Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-white p-4 rounded-lg shadow">
