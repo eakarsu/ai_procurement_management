@@ -28,6 +28,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+<script src="/feature-pack/feature-pack.js" defer />
         <WorkspaceShell>{children}</WorkspaceShell>
       </body>
     </html>

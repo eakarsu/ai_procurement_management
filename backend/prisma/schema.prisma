@@ -292,6 +292,23 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model StaffTask {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  title       String
+  description String?
+  priority    String    @default("NORMAL")
+  status      String    @default("OPEN")
+  dueAt       DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId, status])
+  @@map("staff_tasks")
+}
+
 model AiResult {
   id        String   @id @default(cuid())
   tenantId  String

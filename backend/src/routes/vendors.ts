@@ -1,12 +1,26 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { AuthRequest, requireRole } from '../middleware/auth';
+import { filterVendors, toCsv } from '../lib/listTools';
 
 const router = Router();
 
 router.get('/', async (req: AuthRequest, res, next) => {
   try {
-    const data = await prisma.vendor.findMany({ where: { tenantId: req.user!.tenantId }, orderBy: { createdAt: 'desc' } });
+    const q = String(req.query.q || '');
+    const qualificationStatus = String(req.query.qualificationStatus || '');
+    const where = {
+      tenantId: req.user!.tenantId,
+      ...(qualificationStatus ? { qualificationStatus: qualificationStatus as never } : {}),
+      ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' as const } }, { email: { contains: q, mode: 'insensitive' as const } }, { industryType: { contains: q, mode: 'insensitive' as const } }] } : {}),
+    };
+    const rows = await prisma.vendor.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const data = filterVendors(rows as unknown as Record<string, unknown>[], { q, qualificationStatus });
+    if (String(req.query.format || '').toLowerCase() === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="vendors.csv"');
+      return res.send(toCsv(data));
+    }
     return res.json({ success: true, data });
   } catch (error) { return next(error); }
 });

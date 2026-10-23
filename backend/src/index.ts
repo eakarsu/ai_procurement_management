@@ -12,6 +12,8 @@ import { prisma } from './lib/prisma';
 import authRoutes from './routes/auth';
 import vendorRoutes from './routes/vendors';
 import bidRoutes from './routes/bids';
+import taskRoutes from './routes/tasks';
+import aiInsightRoutes from './routes/aiInsights';
 
 dotenv.config();
 export const app = express();
@@ -38,6 +40,8 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, l
 app.use('/api/auth', authRoutes);
 app.use('/api/vendors', authenticateToken, auditMutation, vendorRoutes);
 app.use('/api/bids', authenticateToken, auditMutation, bidRoutes);
+app.use('/api/tasks', authenticateToken, auditMutation, taskRoutes);
+app.use('/api/ai-insights', authenticateToken, aiInsightRoutes);
 
 // Generated dashboards and generic model calls are prototypes, not an
 // authoritative procurement record. They remain unavailable in production.
